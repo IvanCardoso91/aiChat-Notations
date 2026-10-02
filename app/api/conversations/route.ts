@@ -1,12 +1,13 @@
 import { getAuthorizedUser, unauthorizedResponse } from '@/lib/auth';
 import { listConversations } from '@/lib/conversations';
 
-// GET /api/conversations — lista as conversas salvas (para a barra lateral).
+// GET /api/conversations — lista as conversas do usuário logado.
 export async function GET() {
-  if (!(await getAuthorizedUser())) return unauthorizedResponse();
+  const user = await getAuthorizedUser();
+  if (!user) return unauthorizedResponse();
 
   try {
-    return Response.json(await listConversations());
+    return Response.json(await listConversations(user.id));
   } catch (error) {
     console.error('Erro ao listar conversas:', error);
     return Response.json(

@@ -1,12 +1,13 @@
 import { getAuthorizedUser, unauthorizedResponse } from '@/lib/auth';
 import { getConversation, isValidConversationId } from '@/lib/conversations';
 
-// GET /api/conversations/:id — devolve uma conversa com todas as mensagens.
+// GET /api/conversations/:id — devolve uma conversa do usuário logado.
 export async function GET(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  if (!(await getAuthorizedUser())) return unauthorizedResponse();
+  const user = await getAuthorizedUser();
+  if (!user) return unauthorizedResponse();
 
   const { id } = await params;
 
@@ -15,7 +16,7 @@ export async function GET(
   }
 
   try {
-    const conversation = await getConversation(id);
+    const conversation = await getConversation(id, user.id);
 
     if (!conversation) {
       return Response.json(

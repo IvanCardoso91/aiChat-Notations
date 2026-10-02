@@ -8,7 +8,7 @@ Construí este projeto para o meu pai, que acumulou ao longo dos anos muitas ano
 
 - **Chat com RAG:** cada pergunta busca os trechos mais relevantes das anotações e os entrega ao modelo como contexto.
 - **Respostas em streaming**, com Markdown e blocos de código.
-- **Histórico de conversas:** as conversas ficam salvas e podem ser reabertas pela barra lateral.
+- **Histórico de conversas:** as conversas ficam salvas por usuário e podem ser reabertas pela barra lateral.
 - **Gerenciamento de anotações pelo app:** envio de arquivos (`.txt`, `.md`, `.docx`, scripts e arquivos de configuração) e exclusão, sem precisar de terminal.
 - **Acesso restrito:** login por e-mail e senha, com lista de e-mails autorizados e troca de senha pelo próprio usuário.
 - **Modelo reserva:** se o modelo principal estiver indisponível, a pergunta é reenviada automaticamente a um segundo modelo.
@@ -107,7 +107,7 @@ supabase/schema.sql         Tabelas e função de busca
 
 ## Decisões e limitações
 
-- **Uso pessoal:** o app foi pensado para um único usuário. O histórico e as anotações são compartilhados entre os e-mails autorizados.
+- **Uso pessoal:** o app foi pensado para poucos usuários de confiança. Cada um tem o próprio histórico de conversas, mas as anotações formam uma base única, compartilhada entre os e-mails autorizados.
 - **Segurança em camadas:** o `proxy.ts` barra quem não está logado, e cada rota de API confere a sessão de novo antes de responder. As tabelas têm RLS ativado e só são acessadas pelo servidor.
 - **Custo zero:** tudo roda nas camadas gratuitas do Supabase e do Gemini. Na camada gratuita do Gemini, o conteúdo enviado pode ser usado pelo Google para melhorar os produtos, então as anotações não devem conter senhas nem dados sensíveis.
 - **Busca semântica simples:** os blocos têm tamanho fixo e a busca devolve até 4 trechos por pergunta. Não há reordenação dos resultados nem busca híbrida por palavra-chave.

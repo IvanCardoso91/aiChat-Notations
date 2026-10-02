@@ -44,11 +44,15 @@ export function isValidConversationId(id: unknown): id is string {
   return typeof id === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(id);
 }
 
-// Lista as conversas, da mais recente para a mais antiga (sem as mensagens).
-export async function listConversations(): Promise<ConversationSummary[]> {
+// Lista as conversas do usuário, da mais recente para a mais antiga
+// (sem as mensagens).
+export async function listConversations(
+  userId: string
+): Promise<ConversationSummary[]> {
   const { data, error } = await supabase
     .from('conversations')
     .select('id, title, updated_at')
+    .eq('user_id', userId)
     .order('updated_at', { ascending: false })
     .limit(200);
 
@@ -56,25 +60,44 @@ export async function listConversations(): Promise<ConversationSummary[]> {
   return data ?? [];
 }
 
-// Carrega uma conversa com todas as mensagens, ou null se não existir.
-export async function getConversation(id: string): Promise<Conversation | null> {
+// Carrega uma conversa do usuário com todas as mensagens, ou null se ela não
+// existir ou pertencer a outra pessoa.
+export async function getConversation(
+  id: string,
+  userId: string
+): Promise<Conversation | null> {
   const { data, error } = await supabase
     .from('conversations')
     .select('id, title, updated_at, messages')
     .eq('id', id)
+    .eq('user_id', userId)
     .maybeSingle();
 
   if (error) throw new Error(error.message);
   return data;
 }
 
-// Cria a conversa ou substitui as mensagens de uma conversa existente.
+// Cria a conversa ou substitui as mensagens de uma conversa do usuário.
 export async function saveConversation(
   id: string,
+  userId: string,
   messages: UIMessage[]
 ): Promise<void> {
+  // Nunca sobrescreve uma conversa que pertence a outro usuário.
+  const { data: existing, error: lookupError } = await supabase
+    .from('conversations')
+    .select('user_id')
+    .eq('id', id)
+    .maybeSingle();
+
+  if (lookupError) throw new Error(lookupError.message);
+  if (existing && existing.user_id !== userId) {
+    throw new Error('A conversa pertence a outro usuário.');
+  }
+
   const { error } = await supabase.from('conversations').upsert({
     id,
+    user_id: userId,
     title: buildTitle(messages),
     messages,
     updated_at: new Date().toISOString(),

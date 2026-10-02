@@ -51,7 +51,8 @@ const chatModel = wrapLanguageModel({
 
 export async function POST(req: Request) {
   // Só o usuário logado e autorizado pode usar o chat.
-  if (!(await getAuthorizedUser())) return unauthorizedResponse();
+  const user = await getAuthorizedUser();
+  if (!user) return unauthorizedResponse();
 
   try {
     // O useChat envia as mensagens e o id da conversa atual.
@@ -143,7 +144,7 @@ Instruções:
           if (!answered || !isValidConversationId(id)) return;
 
           try {
-            await saveConversation(id, allMessages);
+            await saveConversation(id, user.id, allMessages);
           } catch (error) {
             console.error('Erro ao salvar a conversa:', error);
           }

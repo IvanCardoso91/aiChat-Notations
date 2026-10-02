@@ -32,16 +32,18 @@ as $$
   limit match_count;
 $$;
 
--- Histórico de conversas: as mensagens de cada conversa ficam em JSON.
+-- Histórico de conversas: cada conversa pertence a um usuário, e as
+-- mensagens ficam em JSON.
 create table if not exists conversations (
   id text primary key,
+  user_id uuid references auth.users (id) on delete cascade,
   title text not null,
   messages jsonb not null default '[]'::jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
-create index if not exists conversations_updated_at_idx
-  on conversations (updated_at desc);
+create index if not exists conversations_user_updated_at_idx
+  on conversations (user_id, updated_at desc);
 
 alter table conversations enable row level security;
