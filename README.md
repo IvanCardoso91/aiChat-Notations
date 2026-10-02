@@ -1,36 +1,120 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Assistente de Infraestrutura
 
-## Getting Started
+Chat com IA que responde a partir de anotações pessoais, usando RAG (geração aumentada por recuperação).
 
-First, run the development server:
+Construí este projeto para o meu pai, que acumulou ao longo dos anos muitas anotações sobre problemas e soluções de infraestrutura (Unix, Linux, cloud). Em vez de procurar arquivo por arquivo, ele pergunta em linguagem natural e o assistente responde com base no que ele mesmo escreveu.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+## Funcionalidades
+
+- **Chat com RAG:** cada pergunta busca os trechos mais relevantes das anotações e os entrega ao modelo como contexto.
+- **Respostas em streaming**, com Markdown e blocos de código.
+- **Histórico de conversas:** as conversas ficam salvas e podem ser reabertas pela barra lateral.
+- **Gerenciamento de anotações pelo app:** envio de arquivos (`.txt`, `.md`, `.docx`, scripts e arquivos de configuração) e exclusão, sem precisar de terminal.
+- **Acesso restrito:** login por e-mail e senha, com lista de e-mails autorizados e troca de senha pelo próprio usuário.
+- **Modelo reserva:** se o modelo principal estiver indisponível, a pergunta é reenviada automaticamente a um segundo modelo.
+- **Layout responsivo**, para uso no computador e no celular.
+
+## Como funciona
+
+```mermaid
+flowchart LR
+  subgraph Ingestão
+    A[Arquivo de anotação] --> B[Extração do texto e divisão em blocos]
+    B --> C[Embedding de cada bloco]
+    C --> D[(Supabase + pgvector)]
+  end
+  subgraph Pergunta
+    E[Pergunta no chat] --> F[Embedding da pergunta]
+    F --> G[Busca por similaridade]
+    D --> G
+    G --> H[Trechos encontrados + pergunta]
+    H --> I[Gemini gera a resposta em streaming]
+  end
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+1. **Ingestão:** o texto de cada arquivo é dividido em blocos de cerca de 1000 caracteres (com sobreposição de 200). Cada bloco vira um vetor de 768 dimensões e é gravado no Postgres com `pgvector`.
+2. **Recuperação:** a pergunta do usuário também vira um vetor, e uma função SQL devolve os blocos mais próximos por similaridade de cosseno.
+3. **Geração:** os blocos encontrados entram nas instruções do modelo, que responde priorizando o conteúdo das anotações.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Tecnologias
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Camada | Tecnologia |
+|---|---|
+| Aplicação | Next.js 16 (App Router), React 19, TypeScript |
+| Interface | Tailwind CSS 4, lucide-react, react-markdown |
+| IA | AI SDK 7, Gemini (`gemini-3.8-flash`, com `gemini-3.5-flash-lite` como reserva) |
+| Embeddings | `gemini-embedding-2` (768 dimensões) |
+| Banco e busca vetorial | Supabase (Postgres + pgvector) |
+| Autenticação | Supabase Auth, com sessão em cookies (`@supabase/ssr`) |
 
-## Learn More
+## Como rodar localmente
 
-To learn more about Next.js, take a look at the following resources:
+Pré-requisitos: Node.js 20 ou superior, um projeto no [Supabase](https://supabase.com) e uma chave da [API do Gemini](https://aistudio.google.com/apikey).
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+1. Instale as dependências:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+   ```bash
+   npm install
+   ```
 
-## Deploy on Vercel
+2. Crie as tabelas e a função de busca executando o conteúdo de [`supabase/schema.sql`](supabase/schema.sql) no SQL Editor do Supabase.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+3. No painel do Supabase, em Authentication, crie um usuário com e-mail e senha e desative o cadastro de novos usuários.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+4. Copie `.env.example` para `.env.local` e preencha as variáveis:
+
+   | Variável | Descrição |
+   |---|---|
+   | `NEXT_PUBLIC_SUPABASE_URL` | URL do projeto no Supabase |
+   | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Chave pública (anon/publishable), usada no login |
+   | `SUPABASE_SERVICE_ROLE_KEY` | Chave de serviço, usada apenas no servidor |
+   | `GOOGLE_GENERATIVE_AI_API_KEY` | Chave da API do Gemini |
+   | `ALLOWED_EMAILS` | E-mails autorizados a entrar, separados por vírgula |
+
+5. Inicie o servidor de desenvolvimento e acesse `http://localhost:3000`:
+
+   ```bash
+   npm run dev
+   ```
+
+As anotações podem ser enviadas pela tela **Anotações** do app. Como alternativa, coloque os arquivos em `scripts/notas/` e rode:
+
+```bash
+npm run ingest
+```
+
+## Estrutura do projeto
+
+```
+app/
+  page.tsx                  Chat e barra lateral com o histórico
+  login/                    Tela de login e ações de entrar e sair
+  alterar-senha/            Troca de senha
+  anotacoes/                Envio, listagem e exclusão de anotações
+  api/chat/                 Busca vetorial e resposta do modelo em streaming
+  api/conversations/        Histórico de conversas
+  api/notes/                Upload e exclusão de anotações
+lib/
+  notes.ts                  Extração de texto, divisão em blocos e embeddings
+  conversations.ts          Leitura e gravação do histórico
+  auth.ts                   Verificação do usuário nas rotas
+  allowed-emails.ts         Lista de e-mails autorizados
+  supabase/                 Clientes do Supabase para servidor e proxy
+proxy.ts                    Renova a sessão e exige login em todas as rotas
+scripts/ingest.ts           Ingestão em lote pela linha de comando
+supabase/schema.sql         Tabelas e função de busca
+```
+
+## Decisões e limitações
+
+- **Uso pessoal:** o app foi pensado para um único usuário. O histórico e as anotações são compartilhados entre os e-mails autorizados.
+- **Segurança em camadas:** o `proxy.ts` barra quem não está logado, e cada rota de API confere a sessão de novo antes de responder. As tabelas têm RLS ativado e só são acessadas pelo servidor.
+- **Custo zero:** tudo roda nas camadas gratuitas do Supabase e do Gemini. Na camada gratuita do Gemini, o conteúdo enviado pode ser usado pelo Google para melhorar os produtos, então as anotações não devem conter senhas nem dados sensíveis.
+- **Busca semântica simples:** os blocos têm tamanho fixo e a busca devolve até 4 trechos por pergunta. Não há reordenação dos resultados nem busca híbrida por palavra-chave.
+
+## Próximos passos
+
+- Busca na internet para complementar as anotações com informações atuais.
+- Comando no chat para registrar anotações rápidas.
+- Excluir e renomear conversas.
+- Recuperação de senha por e-mail.
