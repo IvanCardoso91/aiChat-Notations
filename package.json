@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "ingest": "tsx scripts/ingest.ts"
+    "ingest": "tsx --env-file=.env.local scripts/ingest.ts"
   },
   "dependencies": {
     "@ai-sdk/google": "^4.0.87",

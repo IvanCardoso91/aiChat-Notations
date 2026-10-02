@@ -6,10 +6,12 @@ Construí este projeto para o meu pai, que acumulou ao longo dos anos muitas ano
 
 ## Funcionalidades
 
-- **Chat com RAG:** cada pergunta busca os trechos mais relevantes das anotações e os entrega ao modelo como contexto.
-- **Respostas em streaming**, com Markdown e blocos de código.
+- **Chat com RAG:** cada pergunta busca os trechos mais relevantes das anotações e os entrega ao modelo como contexto. A resposta mostra de quais arquivos esses trechos vieram.
+- **Busca híbrida:** combina a busca por significado (vetores) com a busca por termos exatos, como nomes de servidor, IPs e códigos de erro.
+- **Busca com contexto da conversa:** perguntas de continuação ("e no Ubuntu?") são reescritas como uma consulta completa antes da busca.
+- **Respostas em streaming**, com Markdown e blocos de código com botão de copiar. O campo de mensagem aceita várias linhas, para colar logs e trechos de configuração.
 - **Pesquisa na internet (opcional):** quando a pergunta pede informações atuais, o modelo pode consultar a web e citar as fontes, complementando o que está nas anotações.
-- **Histórico de conversas:** as conversas ficam salvas por usuário e podem ser reabertas pela barra lateral.
+- **Histórico de conversas:** as conversas ficam salvas por usuário e podem ser reabertas, renomeadas e excluídas pela barra lateral.
 - **Gerenciamento de anotações pelo app:** envio de arquivos (`.txt`, `.md`, `.docx`, scripts e arquivos de configuração) e exclusão, sem precisar de terminal.
 - **Acesso restrito:** login por e-mail e senha, com lista de e-mails autorizados e troca de senha pelo próprio usuário.
 - **Modelo reserva:** se o modelo principal estiver indisponível, a pergunta é reenviada automaticamente a um segundo modelo.
@@ -33,8 +35,8 @@ flowchart LR
   end
 ```
 
-1. **Ingestão:** o texto de cada arquivo é dividido em blocos de cerca de 1000 caracteres (com sobreposição de 200). Cada bloco vira um vetor de 768 dimensões e é gravado no Postgres com `pgvector`.
-2. **Recuperação:** a pergunta do usuário também vira um vetor, e uma função SQL devolve os blocos mais próximos por similaridade de cosseno.
+1. **Ingestão:** o texto de cada arquivo é dividido em blocos de até 1000 caracteres, respeitando parágrafos, títulos e blocos de código. Cada bloco vira um vetor de 768 dimensões e é gravado no Postgres com `pgvector`, junto com um índice de busca textual.
+2. **Recuperação:** a pergunta é reescrita com o contexto da conversa e vira um vetor. Uma função SQL busca os blocos mais próximos por similaridade de cosseno e, em paralelo, os que contêm termos raros da pergunta, e junta as duas listas por Reciprocal Rank Fusion.
 3. **Geração:** os blocos encontrados entram nas instruções do modelo, que responde priorizando o conteúdo das anotações.
 
 ## Tecnologias
@@ -97,15 +99,18 @@ app/
   api/chat/                 Busca vetorial e resposta do modelo em streaming
   api/conversations/        Histórico de conversas
   api/notes/                Upload e exclusão de anotações
+  api/keepalive/            Consulta mínima ao banco, chamada pelo agendamento
 lib/
-  notes.ts                  Extração de texto, divisão em blocos e embeddings
+  notes.ts                  Extração de texto, embeddings e gravação das anotações
+  chunking.ts               Divisão do texto em blocos por parágrafo e título
   conversations.ts          Leitura e gravação do histórico
   auth.ts                   Verificação do usuário nas rotas
   allowed-emails.ts         Lista de e-mails autorizados
   supabase/                 Clientes do Supabase para servidor e proxy
 proxy.ts                    Renova a sessão e exige login em todas as rotas
-scripts/ingest.ts           Ingestão em lote pela linha de comando
-supabase/schema.sql         Tabelas e função de busca
+scripts/ingest.ts           Ingestão em lote pela linha de comando (usa lib/notes.ts)
+vercel.json                 Agendamento diário que mantém o banco gratuito ativo
+supabase/schema.sql         Tabelas e funções de busca
 ```
 
 ## Decisões e limitações
@@ -113,10 +118,9 @@ supabase/schema.sql         Tabelas e função de busca
 - **Uso pessoal:** o app foi pensado para poucos usuários de confiança. Cada um tem o próprio histórico de conversas, mas as anotações formam uma base única, compartilhada entre os e-mails autorizados.
 - **Segurança em camadas:** o `proxy.ts` barra quem não está logado, e cada rota de API confere a sessão de novo antes de responder. As tabelas têm RLS ativado e só são acessadas pelo servidor.
 - **Custo zero:** tudo roda nas camadas gratuitas do Supabase e do Gemini. Na camada gratuita do Gemini, o conteúdo enviado pode ser usado pelo Google para melhorar os produtos, então as anotações não devem conter senhas nem dados sensíveis.
-- **Busca semântica simples:** os blocos têm tamanho fixo e a busca devolve até 4 trechos por pergunta. Não há reordenação dos resultados nem busca híbrida por palavra-chave.
+- **Busca híbrida sem reordenação:** a busca devolve até 6 trechos por pergunta, combinando vetores e termos exatos. Não há um modelo de reordenação (reranker) depois da busca, e a qualidade ainda não é medida por um conjunto de perguntas de avaliação.
 
 ## Próximos passos
 
 - Comando no chat para registrar anotações rápidas.
-- Excluir e renomear conversas.
 - Recuperação de senha por e-mail.

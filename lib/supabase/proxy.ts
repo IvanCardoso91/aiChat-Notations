@@ -39,6 +39,10 @@ export async function updateSession(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const isLoginPage = pathname === '/login';
 
+  // Chamada diária agendada na Vercel (vercel.json): não tem usuário logado
+  // e não devolve nenhum dado.
+  if (pathname === '/api/keepalive') return supabaseResponse;
+
   if (!authorized && !isLoginPage) {
     if (pathname.startsWith('/api/')) {
       return NextResponse.json({ error: 'Não autenticado.' }, { status: 401 });

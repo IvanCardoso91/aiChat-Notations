@@ -1,10 +1,11 @@
 // Anotações usadas pelo RAG (tabela `document_sections`).
-// Mesma lógica do scripts/ingest.ts, para uso pelo upload dentro do app.
+// Usado pelo upload dentro do app e pelo scripts/ingest.ts.
 // Usa a chave service_role: importe apenas em código de servidor.
 import path from 'path';
 import { createClient } from '@supabase/supabase-js';
 import { GoogleGenAI } from '@google/genai';
 import mammoth from 'mammoth';
+import { chunkText } from './chunking';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -17,8 +18,6 @@ const genAI = new GoogleGenAI({
 // Devem ser iguais aos do scripts/ingest.ts e aos da busca em app/api/chat.
 const EMBEDDING_MODEL = 'gemini-embedding-2';
 const EMBEDDING_DIMENSIONS = 768;
-const CHUNK_SIZE = 1000;
-const CHUNK_OVERLAP = 200;
 
 // Limites de um upload, para caber no tempo de execução do servidor.
 export const MAX_FILE_BYTES = 4 * 1024 * 1024; // 4 MB
@@ -49,14 +48,6 @@ export type NoteSummary = {
 
 // Erro com mensagem que pode ser mostrada ao usuário.
 export class NoteError extends Error {}
-
-function chunkText(text: string): string[] {
-  const chunks: string[] = [];
-  for (let i = 0; i < text.length; i += CHUNK_SIZE - CHUNK_OVERLAP) {
-    chunks.push(text.slice(i, i + CHUNK_SIZE));
-  }
-  return chunks;
-}
 
 // Arquivos de texto antigos do Windows nem sempre estão em UTF-8.
 function decodeText(buffer: Buffer): string {

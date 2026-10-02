@@ -9,7 +9,7 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-const TITLE_MAX_LENGTH = 60;
+export const TITLE_MAX_LENGTH = 60;
 
 export type ConversationSummary = {
   id: string;
@@ -78,6 +78,7 @@ export async function getConversation(
 }
 
 // Cria a conversa ou substitui as mensagens de uma conversa do usuário.
+// O título só é definido na criação, para não desfazer uma renomeação.
 export async function saveConversation(
   id: string,
   userId: string,
@@ -95,13 +96,53 @@ export async function saveConversation(
     throw new Error('A conversa pertence a outro usuário.');
   }
 
-  const { error } = await supabase.from('conversations').upsert({
-    id,
-    user_id: userId,
-    title: buildTitle(messages),
-    messages,
-    updated_at: new Date().toISOString(),
-  });
+  const updatedAt = new Date().toISOString();
+  const { error } = existing
+    ? await supabase
+        .from('conversations')
+        .update({ messages, updated_at: updatedAt })
+        .eq('id', id)
+        .eq('user_id', userId)
+    : await supabase.from('conversations').insert({
+        id,
+        user_id: userId,
+        title: buildTitle(messages),
+        messages,
+        updated_at: updatedAt,
+      });
 
   if (error) throw new Error(error.message);
+}
+
+// Troca o título de uma conversa do usuário. Devolve false se ela não existir.
+export async function renameConversation(
+  id: string,
+  userId: string,
+  title: string
+): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('conversations')
+    .update({ title })
+    .eq('id', id)
+    .eq('user_id', userId)
+    .select('id');
+
+  if (error) throw new Error(error.message);
+  return (data ?? []).length > 0;
+}
+
+// Exclui uma conversa do usuário. Devolve false se ela não existir.
+export async function deleteConversation(
+  id: string,
+  userId: string
+): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('conversations')
+    .delete()
+    .eq('id', id)
+    .eq('user_id', userId)
+    .select('id');
+
+  if (error) throw new Error(error.message);
+  return (data ?? []).length > 0;
 }

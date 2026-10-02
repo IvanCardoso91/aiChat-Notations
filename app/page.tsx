@@ -6,10 +6,12 @@ import {
   useRef,
   useState,
   type FormEvent,
+  type KeyboardEvent,
+  type ReactNode,
 } from 'react';
 import Link from 'next/link';
 import { useChat } from '@ai-sdk/react';
-import { isToolUIPart, type UIMessage } from 'ai';
+import { isToolUIPart } from 'ai';
 import ReactMarkdown from 'react-markdown';
 import {
   Send,
@@ -24,7 +26,12 @@ import {
   KeyRound,
   FileText,
   Globe,
+  Pencil,
+  Trash2,
+  Check,
+  Copy,
 } from 'lucide-react';
+import type { ChatMessage } from '@/lib/chat-types';
 import { logout } from './login/actions';
 
 type ConversationSummary = {
@@ -49,9 +56,13 @@ export default function ChatPage() {
   // A página sempre abre em uma conversa nova; ela só é salva no histórico
   // depois da primeira resposta.
   const [activeId, setActiveId] = useState(newConversationId);
-  const [initialMessages, setInitialMessages] = useState<UIMessage[]>([]);
+  const [initialMessages, setInitialMessages] = useState<ChatMessage[]>([]);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  // Conversa sendo renomeada ou aguardando confirmação de exclusão.
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingTitle, setEditingTitle] = useState('');
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   const refreshConversations = useCallback(async () => {
     try {
@@ -93,6 +104,49 @@ export default function ChatPage() {
     setSidebarOpen(false);
     setInitialMessages([]);
     setActiveId(newConversationId());
+  }
+
+  async function renameConversation(id: string) {
+    const title = editingTitle.replace(/\s+/g, ' ').trim();
+    setEditingId(null);
+    const current = conversations.find((conversation) => conversation.id === id);
+    if (!title || title === current?.title) return;
+
+    try {
+      const response = await fetch(
+        `/api/conversations/${encodeURIComponent(id)}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title }),
+        }
+      );
+      if (redirectToLoginIfNeeded(response)) return;
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      setHistoryError(null);
+      await refreshConversations();
+    } catch {
+      setHistoryError('Não foi possível renomear a conversa.');
+    }
+  }
+
+  async function deleteConversation(id: string) {
+    setConfirmDeleteId(null);
+
+    try {
+      const response = await fetch(
+        `/api/conversations/${encodeURIComponent(id)}`,
+        { method: 'DELETE' }
+      );
+      if (redirectToLoginIfNeeded(response)) return;
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      // Se a conversa excluída é a que está aberta, volta para uma nova.
+      if (id === activeId) startNewConversation();
+      setHistoryError(null);
+      await refreshConversations();
+    } catch {
+      setHistoryError('Não foi possível excluir a conversa.');
+    }
   }
 
   return (
@@ -141,22 +195,124 @@ export default function ChatPage() {
             </p>
           )}
 
-          {conversations.map((conversation) => (
-            <button
-              key={conversation.id}
-              type="button"
-              onClick={() => openConversation(conversation.id)}
-              title={conversation.title}
-              className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition ${
-                conversation.id === activeId
-                  ? 'bg-slate-800 text-slate-100'
-                  : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'
-              }`}
-            >
-              <MessageSquare className="w-4 h-4 shrink-0" />
-              <span className="truncate">{conversation.title}</span>
-            </button>
-          ))}
+          {conversations.map((conversation) => {
+            // Renomeando: campo de texto no lugar do título.
+            if (editingId === conversation.id) {
+              return (
+                <form
+                  key={conversation.id}
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    renameConversation(conversation.id);
+                  }}
+                  className="flex items-center gap-1 rounded-lg bg-slate-800 px-2 py-1.5"
+                >
+                  <input
+                    autoFocus
+                    value={editingTitle}
+                    maxLength={60}
+                    onChange={(event) => setEditingTitle(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Escape') setEditingId(null);
+                    }}
+                    aria-label="Novo título da conversa"
+                    className="min-w-0 flex-1 rounded-md border border-slate-600 bg-slate-900 px-2 py-1 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none"
+                  />
+                  <button
+                    type="submit"
+                    aria-label="Salvar título"
+                    className="rounded-md p-1.5 text-emerald-400 hover:bg-slate-700"
+                  >
+                    <Check className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditingId(null)}
+                    aria-label="Cancelar"
+                    className="rounded-md p-1.5 text-slate-400 hover:bg-slate-700"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </form>
+              );
+            }
+
+            // Confirmando a exclusão.
+            if (confirmDeleteId === conversation.id) {
+              return (
+                <div
+                  key={conversation.id}
+                  className="flex items-center gap-2 rounded-lg bg-slate-800 px-3 py-2 text-xs"
+                >
+                  <span className="min-w-0 flex-1 truncate text-slate-300">
+                    Excluir esta conversa?
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => deleteConversation(conversation.id)}
+                    className="rounded-md bg-red-700 px-2.5 py-1 font-medium text-white hover:bg-red-600"
+                  >
+                    Excluir
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmDeleteId(null)}
+                    className="rounded-md px-2 py-1 text-slate-300 hover:bg-slate-700"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              );
+            }
+
+            return (
+              <div
+                key={conversation.id}
+                className={`group flex items-center rounded-lg text-sm transition ${
+                  conversation.id === activeId
+                    ? 'bg-slate-800 text-slate-100'
+                    : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={() => openConversation(conversation.id)}
+                  title={conversation.title}
+                  className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-left"
+                >
+                  <MessageSquare className="w-4 h-4 shrink-0" />
+                  <span className="truncate">{conversation.title}</span>
+                </button>
+                {/* No computador os botões aparecem ao passar o mouse; no
+                    celular ficam sempre visíveis. */}
+                <div className="flex shrink-0 items-center pr-1 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setConfirmDeleteId(null);
+                      setEditingTitle(conversation.title);
+                      setEditingId(conversation.id);
+                    }}
+                    aria-label={`Renomear ${conversation.title}`}
+                    className="rounded-md p-1.5 text-slate-400 hover:bg-slate-700 hover:text-slate-100"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingId(null);
+                      setConfirmDeleteId(conversation.id);
+                    }}
+                    aria-label={`Excluir ${conversation.title}`}
+                    className="rounded-md p-1.5 text-slate-400 hover:bg-slate-700 hover:text-red-300"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
         </nav>
 
         <div className="space-y-1 border-t border-slate-800 p-3">
@@ -198,6 +354,47 @@ export default function ChatPage() {
   );
 }
 
+// Bloco de código das respostas, com botão para copiar o conteúdo.
+function CodeBlock({ children }: { children: ReactNode }) {
+  const preRef = useRef<HTMLPreElement>(null);
+  const [copied, setCopied] = useState(false);
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(preRef.current?.innerText ?? '');
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Sem permissão para a área de transferência: o texto ainda pode ser
+      // selecionado e copiado à mão.
+    }
+  }
+
+  return (
+    <div className="relative my-2">
+      <button
+        type="button"
+        onClick={copy}
+        aria-label="Copiar código"
+        className="absolute right-2 top-2 flex items-center gap-1 rounded-md border border-slate-700 bg-slate-900/90 px-2 py-1 text-[11px] text-slate-300 hover:bg-slate-800 hover:text-slate-100"
+      >
+        {copied ? (
+          <Check className="w-3 h-3 text-emerald-400" />
+        ) : (
+          <Copy className="w-3 h-3" />
+        )}
+        <span>{copied ? 'Copiado' : 'Copiar'}</span>
+      </button>
+      <pre
+        ref={preRef}
+        className="bg-slate-950 p-3 pt-9 rounded-lg overflow-x-auto text-xs font-mono border border-slate-800 text-emerald-400 [&>code]:bg-transparent [&>code]:p-0 [&>code]:text-inherit"
+      >
+        {children}
+      </pre>
+    </div>
+  );
+}
+
 function ChatWindow({
   id,
   initialMessages,
@@ -205,14 +402,14 @@ function ChatWindow({
   onOpenSidebar,
 }: {
   id: string;
-  initialMessages: UIMessage[];
+  initialMessages: ChatMessage[];
   onResponseFinished: () => void;
   onOpenSidebar: () => void;
 }) {
   // No AI SDK 7 o useChat não controla mais o campo de texto: o input é
   // estado local e o envio é feito com sendMessage.
   const [input, setInput] = useState('');
-  const { messages, sendMessage, status, error } = useChat({
+  const { messages, sendMessage, status, error } = useChat<ChatMessage>({
     id, // enviado ao servidor, que salva a conversa com este id
     messages: initialMessages,
     // Atualiza a barra lateral quando a resposta termina (e já foi salva).
@@ -232,6 +429,27 @@ function ChatWindow({
     if (!text || isLoading) return;
     sendMessage({ text });
     setInput('');
+  }
+
+  // O campo cresce com o texto, até um limite; depois disso ganha rolagem.
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    textarea.style.height = 'auto';
+    textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`;
+  }, [input]);
+
+  // Enter envia; Shift+Enter quebra a linha.
+  function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (
+      event.key === 'Enter' &&
+      !event.shiftKey &&
+      !event.nativeEvent.isComposing
+    ) {
+      event.preventDefault();
+      event.currentTarget.form?.requestSubmit();
+    }
   }
 
   return (
@@ -309,8 +527,18 @@ function ChatWindow({
                     </p>
                   )}
 
-                {/* O react-markdown 10 não passa mais a prop `inline`: blocos de
-                    código são estilizados no `pre` e código inline no `code`. */}
+                {/* A mensagem do usuário é mostrada como texto puro, para que um
+                    log ou trecho de configuração colado mantenha as quebras de
+                    linha. A resposta do assistente passa pelo Markdown; o
+                    react-markdown 10 não tem mais a prop `inline`, então blocos
+                    de código são estilizados no `pre` e código inline no `code`. */}
+                {message.role === 'user' ? (
+                  <p className="whitespace-pre-wrap break-words">
+                    {message.parts
+                      .map((part) => (part.type === 'text' ? part.text : ''))
+                      .join('')}
+                  </p>
+                ) : (
                 <ReactMarkdown
                   components={{
                     a({ href, children }) {
@@ -326,11 +554,7 @@ function ChatWindow({
                       );
                     },
                     pre({ children }) {
-                      return (
-                        <pre className="bg-slate-950 p-3 rounded-lg overflow-x-auto text-xs font-mono border border-slate-800 text-emerald-400 my-2 [&>code]:bg-transparent [&>code]:p-0 [&>code]:text-inherit">
-                          {children}
-                        </pre>
-                      );
+                      return <CodeBlock>{children}</CodeBlock>;
                     },
                     code({ className, children }) {
                       return (
@@ -347,6 +571,24 @@ function ChatWindow({
                     .map((part) => (part.type === 'text' ? part.text : ''))
                     .join('')}
                 </ReactMarkdown>
+                )}
+
+                {/* Arquivos de anotações que a busca encontrou para esta resposta */}
+                {message.role === 'assistant' &&
+                  (message.metadata?.sources?.length ?? 0) > 0 && (
+                    <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-slate-700 pt-2 text-xs text-slate-400">
+                      <FileText className="w-3.5 h-3.5 shrink-0" />
+                      <span>Anotações consultadas:</span>
+                      {message.metadata?.sources?.map((source) => (
+                        <span
+                          key={source}
+                          className="rounded-md bg-slate-900 px-2 py-0.5 text-slate-300"
+                        >
+                          {source}
+                        </span>
+                      ))}
+                    </div>
+                  )}
               </div>
 
               {message.role === 'user' && (
@@ -378,13 +620,17 @@ function ChatWindow({
       <footer className="p-4 bg-slate-800 border-t border-slate-700">
         <form
           onSubmit={handleSubmit}
-          className="flex gap-2 max-w-4xl mx-auto w-full"
+          className="flex items-end gap-2 max-w-4xl mx-auto w-full"
         >
-          <input
+          <textarea
+            ref={textareaRef}
+            rows={1}
             value={input}
             onChange={(event) => setInput(event.target.value)}
-            placeholder="Digite sua dúvida ou comando (ex: Como configurar Nginx?)..."
-            className="flex-1 bg-slate-900 text-slate-100 border border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-emerald-500 placeholder-slate-500"
+            onKeyDown={handleKeyDown}
+            placeholder="Digite sua dúvida ou cole um log (Shift+Enter quebra a linha)"
+            aria-label="Mensagem"
+            className="flex-1 resize-none overflow-y-auto bg-slate-900 text-slate-100 border border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-emerald-500 placeholder-slate-500"
           />
           <button
             type="submit"
