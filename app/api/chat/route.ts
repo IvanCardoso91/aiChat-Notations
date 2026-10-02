@@ -5,6 +5,9 @@ import {
   convertToModelMessages,
   createIdGenerator,
   createUIMessageStreamResponse,
+  isStepCount,
+  jsonSchema,
+  tool,
   toUIMessageStream,
   wrapLanguageModel,
   type LanguageModelMiddleware,
@@ -44,9 +47,80 @@ const fallbackMiddleware: LanguageModelMiddleware = {
   },
 };
 
+// Instruções extras quando a pesquisa na internet está disponível.
+function webSearchInstructions() {
+  const today = new Intl.DateTimeFormat('pt-BR', {
+    dateStyle: 'long',
+    timeZone: 'America/Sao_Paulo',
+  }).format(new Date());
+
+  return `
+
+Pesquisa na internet (data de hoje: ${today}):
+- Use a ferramenta pesquisar_na_internet quando o usuário pedir informações atuais (versões, alternativas mais modernas, novidades) ou quando as anotações e o seu conhecimento puderem estar desatualizados.
+- Não pesquise quando as anotações já respondem bem à pergunta.
+- Ao usar a pesquisa, deixe claro o que veio das anotações e o que veio da internet, e liste as fontes no final como links em Markdown.
+- Nunca coloque na consulta dados das anotações como senhas, IPs, nomes de clientes ou de servidores.`;
+}
+
 const chatModel = wrapLanguageModel({
   model: google(PRIMARY_MODEL),
   middleware: fallbackMiddleware,
+});
+
+// Pesquisa na internet (opcional): só é oferecida ao modelo quando a chave
+// TAVILY_API_KEY está configurada.
+const tavilyApiKey = process.env.TAVILY_API_KEY;
+
+type WebSearchResult = { title?: string; url?: string; content?: string };
+
+const webSearchTool = tool({
+  description:
+    'Pesquisa na internet informações públicas e atuais (versões, alternativas ' +
+    'mais modernas, novidades, documentação). A consulta deve ser genérica: ' +
+    'nunca inclua senhas, IPs, nomes de clientes ou de servidores das anotações.',
+  inputSchema: jsonSchema<{ query: string }>({
+    type: 'object',
+    properties: {
+      query: {
+        type: 'string',
+        description: 'O que pesquisar, em poucas palavras.',
+      },
+    },
+    required: ['query'],
+  }),
+  // Em caso de falha devolve um aviso em vez de lançar erro, para o modelo
+  // ainda conseguir responder com o que tem.
+  execute: async ({ query }) => {
+    try {
+      const response = await fetch('https://api.tavily.com/search', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${tavilyApiKey}`,
+        },
+        body: JSON.stringify({ query, search_depth: 'basic', max_results: 5 }),
+        signal: AbortSignal.timeout(15000),
+      });
+
+      if (!response.ok) {
+        console.error('Erro na pesquisa (Tavily): HTTP', response.status);
+        return { error: 'A pesquisa na internet falhou.' };
+      }
+
+      const data: { results?: WebSearchResult[] } = await response.json();
+      return {
+        results: (data.results ?? []).map(({ title, url, content }) => ({
+          title,
+          url,
+          content,
+        })),
+      };
+    } catch (error) {
+      console.error('Erro na pesquisa (Tavily):', error);
+      return { error: 'A pesquisa na internet falhou.' };
+    }
+  },
 });
 
 export async function POST(req: Request) {
@@ -117,13 +191,25 @@ ${context ? context : 'Nenhuma anotação diretamente relacionada foi encontrada
 Instruções:
 - Use as anotações acima prioritariamente para fundamentar sua resposta caso sejam relevantes.
 - Se a pergunta envolver códigos Shell/Unix, comandos, Docker ou configurações Cloud, utilize blocos de código formatados com syntax highlighting.
-- Seja claro, objetivo e prestativo.`;
+- Seja claro, objetivo e prestativo.${tavilyApiKey ? webSearchInstructions() : ''}`;
 
     // 4. Chamar o modelo Gemini com respostas em tempo real (Stream)
+    // Das mensagens anteriores, o modelo recebe só o texto: os resultados de
+    // pesquisas antigas ficam salvos no histórico, mas não são reenviados.
+    const textOnlyMessages = messages
+      .map((message) => ({
+        ...message,
+        parts: message.parts.filter((part) => part.type === 'text'),
+      }))
+      .filter((message) => message.parts.length > 0);
+
     const result = streamText({
       model: chatModel,
       instructions: systemPrompt,
-      messages: await convertToModelMessages(messages),
+      messages: await convertToModelMessages(textOnlyMessages),
+      tools: tavilyApiKey ? { pesquisar_na_internet: webSearchTool } : undefined,
+      // Permite pesquisar e depois responder, com no máximo 4 passos.
+      stopWhen: isStepCount(4),
     });
 
     // Mantém a geração até o fim mesmo que a aba seja fechada no meio da

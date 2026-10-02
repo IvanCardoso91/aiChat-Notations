@@ -8,6 +8,7 @@ Construí este projeto para o meu pai, que acumulou ao longo dos anos muitas ano
 
 - **Chat com RAG:** cada pergunta busca os trechos mais relevantes das anotações e os entrega ao modelo como contexto.
 - **Respostas em streaming**, com Markdown e blocos de código.
+- **Pesquisa na internet (opcional):** quando a pergunta pede informações atuais, o modelo pode consultar a web e citar as fontes, complementando o que está nas anotações.
 - **Histórico de conversas:** as conversas ficam salvas por usuário e podem ser reabertas pela barra lateral.
 - **Gerenciamento de anotações pelo app:** envio de arquivos (`.txt`, `.md`, `.docx`, scripts e arquivos de configuração) e exclusão, sem precisar de terminal.
 - **Acesso restrito:** login por e-mail e senha, com lista de e-mails autorizados e troca de senha pelo próprio usuário.
@@ -44,6 +45,7 @@ flowchart LR
 | Interface | Tailwind CSS 4, lucide-react, react-markdown |
 | IA | AI SDK 7, Gemini (`gemini-3.8-flash`, com `gemini-3.5-flash-lite` como reserva) |
 | Embeddings | `gemini-embedding-2` (768 dimensões) |
+| Pesquisa na web | Tavily Search API, exposta ao modelo como ferramenta |
 | Banco e busca vetorial | Supabase (Postgres + pgvector) |
 | Autenticação | Supabase Auth, com sessão em cookies (`@supabase/ssr`) |
 
@@ -70,6 +72,7 @@ Pré-requisitos: Node.js 20 ou superior, um projeto no [Supabase](https://supaba
    | `SUPABASE_SERVICE_ROLE_KEY` | Chave de serviço, usada apenas no servidor |
    | `GOOGLE_GENERATIVE_AI_API_KEY` | Chave da API do Gemini |
    | `ALLOWED_EMAILS` | E-mails autorizados a entrar, separados por vírgula |
+   | `TAVILY_API_KEY` | Opcional. Chave da [Tavily](https://tavily.com) para a pesquisa na internet |
 
 5. Inicie o servidor de desenvolvimento e acesse `http://localhost:3000`:
 
@@ -114,7 +117,6 @@ supabase/schema.sql         Tabelas e função de busca
 
 ## Próximos passos
 
-- Busca na internet para complementar as anotações com informações atuais.
 - Comando no chat para registrar anotações rápidas.
 - Excluir e renomear conversas.
 - Recuperação de senha por e-mail.

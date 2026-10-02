@@ -9,7 +9,7 @@ import {
 } from 'react';
 import Link from 'next/link';
 import { useChat } from '@ai-sdk/react';
-import type { UIMessage } from 'ai';
+import { isToolUIPart, type UIMessage } from 'ai';
 import ReactMarkdown from 'react-markdown';
 import {
   Send,
@@ -23,6 +23,7 @@ import {
   LogOut,
   KeyRound,
   FileText,
+  Globe,
 } from 'lucide-react';
 import { logout } from './login/actions';
 
@@ -290,10 +291,40 @@ function ChatWindow({
                     : 'bg-slate-800 text-slate-200 border border-slate-700 rounded-bl-none shadow-md'
                 }`}
               >
+                {/* Aviso de pesquisa na internet (em andamento ou concluída) */}
+                {message.role === 'assistant' &&
+                  message.parts.some(isToolUIPart) && (
+                    <p className="mb-2 flex items-center gap-1.5 text-xs text-slate-400">
+                      <Globe className="w-3.5 h-3.5" />
+                      <span>
+                        {message.parts.some(
+                          (part) =>
+                            isToolUIPart(part) &&
+                            part.state !== 'output-available' &&
+                            part.state !== 'output-error'
+                        )
+                          ? 'Pesquisando na internet...'
+                          : 'Consultou a internet'}
+                      </span>
+                    </p>
+                  )}
+
                 {/* O react-markdown 10 não passa mais a prop `inline`: blocos de
                     código são estilizados no `pre` e código inline no `code`. */}
                 <ReactMarkdown
                   components={{
+                    a({ href, children }) {
+                      return (
+                        <a
+                          href={href}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-emerald-300 underline underline-offset-2 hover:text-emerald-200 break-words"
+                        >
+                          {children}
+                        </a>
+                      );
+                    },
                     pre({ children }) {
                       return (
                         <pre className="bg-slate-950 p-3 rounded-lg overflow-x-auto text-xs font-mono border border-slate-800 text-emerald-400 my-2 [&>code]:bg-transparent [&>code]:p-0 [&>code]:text-inherit">
