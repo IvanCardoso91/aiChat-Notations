@@ -1,127 +1,138 @@
-# Assistente de Infraestrutura
+# 🤖 AI Assistant Infra
 
-Chat com IA que responde a partir de anotações pessoais, usando RAG (geração aumentada por recuperação).
+![Next.js](https://img.shields.io/badge/Next.js-16-000000?logo=nextdotjs&logoColor=white)
+![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)
+![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)
+![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-4-06B6D4?logo=tailwindcss&logoColor=white)
+![Supabase](https://img.shields.io/badge/Supabase-Postgres_+_pgvector-3FCF8E?logo=supabase&logoColor=white)
+![Gemini](https://img.shields.io/badge/Google-Gemini-8E75B2?logo=googlegemini&logoColor=white)
+![Vercel](https://img.shields.io/badge/Deploy-Vercel-000000?logo=vercel&logoColor=white)
 
-Construí este projeto para o meu pai, que acumulou ao longo dos anos muitas anotações sobre problemas e soluções de infraestrutura (Unix, Linux, cloud). Em vez de procurar arquivo por arquivo, ele pergunta em linguagem natural e o assistente responde com base no que ele mesmo escreveu.
+An AI chat that answers from personal notes, using RAG (retrieval-augmented generation).
 
-## Funcionalidades
+I built this project for my father, who over the years has collected a large set of notes about infrastructure problems and their solutions (Unix, Linux, cloud). Instead of searching file by file, he asks in plain language and the assistant answers based on what he wrote himself.
 
-- **Chat com RAG:** cada pergunta busca os trechos mais relevantes das anotações e os entrega ao modelo como contexto. A resposta mostra de quais arquivos esses trechos vieram.
-- **Busca híbrida:** combina a busca por significado (vetores) com a busca por termos exatos, como nomes de servidor, IPs e códigos de erro.
-- **Busca bilíngue e com contexto da conversa:** antes da busca, a pergunta é reescrita como uma consulta completa em português e em inglês. Assim perguntas de continuação ("e no Ubuntu?") e perguntas em inglês encontram as anotações, e a resposta vem no idioma da pergunta.
-- **Respostas em streaming**, com Markdown e blocos de código com botão de copiar. O campo de mensagem aceita várias linhas, para colar logs e trechos de configuração.
-- **Pesquisa na internet (opcional):** quando a pergunta pede informações atuais, o modelo pode consultar a web e citar as fontes, complementando o que está nas anotações.
-- **Histórico de conversas:** as conversas ficam salvas por usuário e podem ser reabertas, renomeadas e excluídas pela barra lateral.
-- **Gerenciamento de anotações pelo app:** envio de arquivos (`.txt`, `.md`, `.docx`, scripts e arquivos de configuração) e exclusão, sem precisar de terminal.
-- **Acesso restrito:** login por e-mail e senha, com lista de e-mails autorizados e troca de senha pelo próprio usuário.
-- **Modelo reserva:** se o modelo principal estiver indisponível, a pergunta é reenviada automaticamente a um segundo modelo.
-- **Layout responsivo**, para uso no computador e no celular.
+> 🇧🇷 The app interface is in Portuguese. Questions can be asked in Portuguese or English.
 
-## Como funciona
+## ✨ Features
+
+- 💬 **RAG chat:** every question retrieves the most relevant passages from the notes and hands them to the model as context. Each answer shows which files those passages came from.
+- 🔎 **Hybrid search:** combines semantic search (vectors) with exact-term search, such as server names, IPs and error codes.
+- 🌐 **Bilingual, conversation-aware retrieval:** before searching, the question is rewritten as a standalone query in Portuguese and in English. Follow-up questions ("and on Ubuntu?") and questions in English still find the notes, and the answer comes back in the language of the question.
+- ⚡ **Streaming answers** with Markdown and code blocks with a copy button. The message field accepts multiple lines, for pasting logs and configuration snippets.
+- 🌍 **Web search (optional):** when a question needs current information, the model can search the web and cite its sources, complementing what is in the notes.
+- 🗂️ **Conversation history:** conversations are saved per user and can be reopened, renamed and deleted from the sidebar.
+- 📄 **Notes managed in the app:** upload (`.txt`, `.md`, `.docx`, scripts and configuration files) and delete notes without touching a terminal.
+- 🔐 **Restricted access:** email and password login, an allowlist of authorized emails, and password change by the user.
+- 🛟 **Fallback model:** if the main model is unavailable, the question is automatically resent to a second model.
+- 📱 **Responsive layout** for desktop and mobile.
+
+## 🧠 How it works
 
 ```mermaid
 flowchart LR
-  subgraph Ingestão
-    A[Arquivo de anotação] --> B[Extração do texto e divisão em blocos]
-    B --> C[Embedding de cada bloco]
+  subgraph Ingestion
+    A[Note file] --> B[Text extraction and chunking]
+    B --> C[Embedding of each chunk]
     C --> D[(Supabase + pgvector)]
   end
-  subgraph Pergunta
-    E[Pergunta no chat] --> F[Embedding da pergunta]
-    F --> G[Busca por similaridade]
+  subgraph Question
+    E[Question in the chat] --> F[Query rewrite and embedding]
+    F --> G[Hybrid search]
     D --> G
-    G --> H[Trechos encontrados + pergunta]
-    H --> I[Gemini gera a resposta em streaming]
+    G --> H[Retrieved passages + question]
+    H --> I[Gemini streams the answer]
   end
 ```
 
-1. **Ingestão:** o texto de cada arquivo é dividido em blocos de até 1000 caracteres, respeitando parágrafos, títulos e blocos de código. Cada bloco vira um vetor de 768 dimensões e é gravado no Postgres com `pgvector`, junto com um índice de busca textual.
-2. **Recuperação:** a pergunta é reescrita com o contexto da conversa, em português e em inglês, e vira um vetor. Uma função SQL busca os blocos mais próximos por similaridade de cosseno e, em paralelo, os que contêm termos raros da pergunta, e junta as duas listas por Reciprocal Rank Fusion.
-3. **Geração:** os blocos encontrados entram nas instruções do modelo, que responde priorizando o conteúdo das anotações.
+1. 📥 **Ingestion:** the text of each file is split into chunks of up to 1000 characters, respecting paragraphs, headings and code blocks. Each chunk becomes a 768-dimension vector and is stored in Postgres with `pgvector`, along with a full-text search index.
+2. 🔎 **Retrieval:** the question is rewritten with the conversation context, in Portuguese and in English, and turned into a vector. A SQL function finds the closest chunks by cosine similarity and, in parallel, the chunks containing rare terms from the question, then merges both lists with Reciprocal Rank Fusion.
+3. ✍️ **Generation:** the retrieved chunks go into the model instructions, and the model answers giving priority to the content of the notes.
 
-## Tecnologias
+## 🛠️ Tech stack
 
-| Camada | Tecnologia |
+| Layer | Technology |
 |---|---|
-| Aplicação | Next.js 16 (App Router), React 19, TypeScript |
+| Application | Next.js 16 (App Router), React 19, TypeScript |
 | Interface | Tailwind CSS 4, lucide-react, react-markdown |
-| IA | AI SDK 7, Gemini (`gemini-3.8-flash`, com `gemini-3.5-flash-lite` como reserva) |
-| Embeddings | `gemini-embedding-2` (768 dimensões) |
-| Pesquisa na web | Tavily Search API, exposta ao modelo como ferramenta |
-| Banco e busca vetorial | Supabase (Postgres + pgvector) |
-| Autenticação | Supabase Auth, com sessão em cookies (`@supabase/ssr`) |
+| AI | AI SDK 7, Gemini (`gemini-3.8-flash`, with `gemini-3.5-flash-lite` as fallback) |
+| Embeddings | `gemini-embedding-2` (768 dimensions) |
+| Web search | Tavily Search API, exposed to the model as a tool |
+| Database and vector search | Supabase (Postgres + pgvector) |
+| Authentication | Supabase Auth, with cookie-based sessions (`@supabase/ssr`) |
 
-## Como rodar localmente
+## 🚀 Running locally
 
-Pré-requisitos: Node.js 20 ou superior, um projeto no [Supabase](https://supabase.com) e uma chave da [API do Gemini](https://aistudio.google.com/apikey).
+Requirements: Node.js 20 or later, a [Supabase](https://supabase.com) project and a [Gemini API](https://aistudio.google.com/apikey) key.
 
-1. Instale as dependências:
+1. Install the dependencies:
 
    ```bash
    npm install
    ```
 
-2. Crie as tabelas e a função de busca executando o conteúdo de [`supabase/schema.sql`](supabase/schema.sql) no SQL Editor do Supabase.
+2. Create the tables and search functions by running the contents of [`supabase/schema.sql`](supabase/schema.sql) in the Supabase SQL Editor.
 
-3. No painel do Supabase, em Authentication, crie um usuário com e-mail e senha e desative o cadastro de novos usuários.
+3. In the Supabase dashboard, under Authentication, create a user with email and password and disable new sign-ups.
 
-4. Copie `.env.example` para `.env.local` e preencha as variáveis:
+4. Copy `.env.example` to `.env.local` and fill in the variables:
 
-   | Variável | Descrição |
+   | Variable | Description |
    |---|---|
-   | `NEXT_PUBLIC_SUPABASE_URL` | URL do projeto no Supabase |
-   | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Chave pública (anon/publishable), usada no login |
-   | `SUPABASE_SERVICE_ROLE_KEY` | Chave de serviço, usada apenas no servidor |
-   | `GOOGLE_GENERATIVE_AI_API_KEY` | Chave da API do Gemini |
-   | `ALLOWED_EMAILS` | E-mails autorizados a entrar, separados por vírgula |
-   | `TAVILY_API_KEY` | Opcional. Chave da [Tavily](https://tavily.com) para a pesquisa na internet |
+   | `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL |
+   | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Public key (anon/publishable), used for login |
+   | `SUPABASE_SERVICE_ROLE_KEY` | Service key, used only on the server |
+   | `GOOGLE_GENERATIVE_AI_API_KEY` | Gemini API key |
+   | `ALLOWED_EMAILS` | Emails allowed to sign in, separated by commas |
+   | `TAVILY_API_KEY` | Optional. [Tavily](https://tavily.com) key for web search |
 
-5. Inicie o servidor de desenvolvimento e acesse `http://localhost:3000`:
+5. Start the development server and open `http://localhost:3000`:
 
    ```bash
    npm run dev
    ```
 
-As anotações podem ser enviadas pela tela **Anotações** do app. Como alternativa, coloque os arquivos em `scripts/notas/` e rode:
+Notes can be uploaded on the **Anotações** (Notes) screen of the app. As an alternative, place the files in `scripts/notas/` and run:
 
 ```bash
 npm run ingest
 ```
 
-## Estrutura do projeto
+## 📁 Project structure
 
 ```
 app/
-  page.tsx                  Chat e barra lateral com o histórico
-  login/                    Tela de login e ações de entrar e sair
-  alterar-senha/            Troca de senha
-  anotacoes/                Envio, listagem e exclusão de anotações
-  api/chat/                 Busca vetorial e resposta do modelo em streaming
-  api/conversations/        Histórico de conversas
-  api/notes/                Upload e exclusão de anotações
-  api/keepalive/            Consulta mínima ao banco, chamada pelo agendamento
+  page.tsx                  Chat and sidebar with the conversation history
+  login/                    Login screen and sign-in / sign-out actions
+  alterar-senha/            Password change
+  anotacoes/                Upload, list and delete notes
+  api/chat/                 Retrieval and streamed model answer
+  api/conversations/        Conversation history
+  api/notes/                Note upload and deletion
+  api/keepalive/            Minimal database query, called by the daily schedule
 lib/
-  notes.ts                  Extração de texto, embeddings e gravação das anotações
-  chunking.ts               Divisão do texto em blocos por parágrafo e título
-  search-query.ts           Tratamento da consulta bilíngue gerada para a busca
-  conversations.ts          Leitura e gravação do histórico
-  auth.ts                   Verificação do usuário nas rotas
-  allowed-emails.ts         Lista de e-mails autorizados
-  supabase/                 Clientes do Supabase para servidor e proxy
-proxy.ts                    Renova a sessão e exige login em todas as rotas
-scripts/ingest.ts           Ingestão em lote pela linha de comando (usa lib/notes.ts)
-vercel.json                 Agendamento diário que mantém o banco gratuito ativo
-supabase/schema.sql         Tabelas e funções de busca
+  notes.ts                  Text extraction, embeddings and storage of notes
+  chunking.ts               Splits text into chunks by paragraph and heading
+  search-query.ts           Parses the bilingual query generated for retrieval
+  conversations.ts          Reads and writes the history
+  auth.ts                   User check for the API routes
+  allowed-emails.ts         Allowlist of authorized emails
+  supabase/                 Supabase clients for the server and the proxy
+proxy.ts                    Refreshes the session and requires login on every route
+scripts/ingest.ts           Batch ingestion from the command line (uses lib/notes.ts)
+vercel.json                 Daily schedule that keeps the free database active
+supabase/schema.sql         Tables and search functions
 ```
 
-## Decisões e limitações
+## ⚖️ Decisions and limitations
 
-- **Uso pessoal:** o app foi pensado para poucos usuários de confiança. Cada um tem o próprio histórico de conversas, mas as anotações formam uma base única, compartilhada entre os e-mails autorizados.
-- **Segurança em camadas:** o `proxy.ts` barra quem não está logado, e cada rota de API confere a sessão de novo antes de responder. As tabelas têm RLS ativado e só são acessadas pelo servidor.
-- **Custo zero:** tudo roda nas camadas gratuitas do Supabase e do Gemini. Na camada gratuita do Gemini, o conteúdo enviado pode ser usado pelo Google para melhorar os produtos, então as anotações não devem conter senhas nem dados sensíveis.
-- **Busca híbrida sem reordenação:** a busca devolve até 6 trechos por pergunta, combinando vetores e termos exatos. Não há um modelo de reordenação (reranker) depois da busca, e a qualidade ainda não é medida por um conjunto de perguntas de avaliação.
+- 👤 **Personal use:** the app is designed for a few trusted users. Each one has their own conversation history, but the notes form a single knowledge base shared by the authorized emails.
+- 🛡️ **Layered security:** `proxy.ts` blocks anyone who is not signed in, and every API route checks the session again before answering. The tables have RLS enabled and are only accessed by the server.
+- 💸 **Zero cost:** everything runs on the free tiers of Supabase, Gemini, Tavily and Vercel. On the Gemini free tier, submitted content may be used by Google to improve its products, so the notes should not contain passwords or sensitive data.
+- 🎯 **Hybrid search without reranking:** retrieval returns up to 6 passages per question, combining vectors and exact terms. There is no reranker after retrieval, and quality is not yet measured against an evaluation set of questions.
 
-## Próximos passos
+## 🗺️ Roadmap
 
-- Comando no chat para registrar anotações rápidas.
-- Recuperação de senha por e-mail.
+- Chat command to save quick notes.
+- Password recovery by email.
+- Automated tests, CI and a retrieval evaluation set.
