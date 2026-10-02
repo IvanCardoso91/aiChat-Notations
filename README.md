@@ -8,7 +8,7 @@ Construí este projeto para o meu pai, que acumulou ao longo dos anos muitas ano
 
 - **Chat com RAG:** cada pergunta busca os trechos mais relevantes das anotações e os entrega ao modelo como contexto. A resposta mostra de quais arquivos esses trechos vieram.
 - **Busca híbrida:** combina a busca por significado (vetores) com a busca por termos exatos, como nomes de servidor, IPs e códigos de erro.
-- **Busca com contexto da conversa:** perguntas de continuação ("e no Ubuntu?") são reescritas como uma consulta completa antes da busca.
+- **Busca bilíngue e com contexto da conversa:** antes da busca, a pergunta é reescrita como uma consulta completa em português e em inglês. Assim perguntas de continuação ("e no Ubuntu?") e perguntas em inglês encontram as anotações, e a resposta vem no idioma da pergunta.
 - **Respostas em streaming**, com Markdown e blocos de código com botão de copiar. O campo de mensagem aceita várias linhas, para colar logs e trechos de configuração.
 - **Pesquisa na internet (opcional):** quando a pergunta pede informações atuais, o modelo pode consultar a web e citar as fontes, complementando o que está nas anotações.
 - **Histórico de conversas:** as conversas ficam salvas por usuário e podem ser reabertas, renomeadas e excluídas pela barra lateral.
@@ -36,7 +36,7 @@ flowchart LR
 ```
 
 1. **Ingestão:** o texto de cada arquivo é dividido em blocos de até 1000 caracteres, respeitando parágrafos, títulos e blocos de código. Cada bloco vira um vetor de 768 dimensões e é gravado no Postgres com `pgvector`, junto com um índice de busca textual.
-2. **Recuperação:** a pergunta é reescrita com o contexto da conversa e vira um vetor. Uma função SQL busca os blocos mais próximos por similaridade de cosseno e, em paralelo, os que contêm termos raros da pergunta, e junta as duas listas por Reciprocal Rank Fusion.
+2. **Recuperação:** a pergunta é reescrita com o contexto da conversa, em português e em inglês, e vira um vetor. Uma função SQL busca os blocos mais próximos por similaridade de cosseno e, em paralelo, os que contêm termos raros da pergunta, e junta as duas listas por Reciprocal Rank Fusion.
 3. **Geração:** os blocos encontrados entram nas instruções do modelo, que responde priorizando o conteúdo das anotações.
 
 ## Tecnologias
@@ -103,6 +103,7 @@ app/
 lib/
   notes.ts                  Extração de texto, embeddings e gravação das anotações
   chunking.ts               Divisão do texto em blocos por parágrafo e título
+  search-query.ts           Tratamento da consulta bilíngue gerada para a busca
   conversations.ts          Leitura e gravação do histórico
   auth.ts                   Verificação do usuário nas rotas
   allowed-emails.ts         Lista de e-mails autorizados

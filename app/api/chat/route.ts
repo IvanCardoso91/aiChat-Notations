@@ -17,6 +17,7 @@ import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { getAuthorizedUser, unauthorizedResponse } from '@/lib/auth';
 import type { ChatMessage } from '@/lib/chat-types';
 import { isValidConversationId, saveConversation } from '@/lib/conversations';
+import { parseBilingualQuery } from '@/lib/search-query';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -131,13 +132,17 @@ function messageText(message: ChatMessage): string {
     .trim();
 }
 
-// Em uma conversa em andamento, a pergunta pode depender do que veio antes
-// ("e no Ubuntu?"). Antes de buscar nas anotações, pede ao modelo leve que a
-// reescreva como uma consulta completa. Se algo falhar, usa a pergunta original.
+// Monta a consulta usada na busca das anotações. O usuário pode perguntar em
+// português ou em inglês, e a pergunta pode depender do que veio antes na
+// conversa ("e no Ubuntu?"). Por isso o modelo leve reescreve a pergunta como
+// uma consulta completa nos dois idiomas. Se algo falhar, usa a pergunta original.
 async function buildSearchQuery(
   previousMessages: ChatMessage[],
   question: string
 ): Promise<string> {
+  // Pergunta longa (um log colado, por exemplo): já traz os termos necessários.
+  if (question.length > 400) return question;
+
   const history = previousMessages
     .slice(-6)
     .map((message) => {
@@ -148,26 +153,26 @@ async function buildSearchQuery(
     .filter(Boolean)
     .join('\n');
 
-  // Primeira pergunta da conversa, ou pergunta longa (um log colado, por
-  // exemplo): já é independente.
-  if (!history || question.length > 400) return question;
-
   try {
     const { text } = await generateText({
       model: google(FALLBACK_MODEL),
       instructions:
-        'Você prepara consultas de busca. Reescreva a última pergunta do usuário ' +
-        'como uma consulta independente, em português, incluindo o assunto da ' +
-        'conversa quando a pergunta depender dele. Mantenha nomes de servidores, ' +
-        'comandos e códigos de erro exatamente como foram escritos. Se a pergunta ' +
-        'já for independente, repita-a. Responda apenas com a consulta, em uma linha.',
-      prompt: `Conversa:\n${history}\n\nÚltima pergunta: ${question}`,
+        'Você prepara consultas de busca para anotações técnicas que podem estar ' +
+        'em português ou em inglês. Reescreva a última pergunta do usuário como ' +
+        'uma consulta independente, incluindo o assunto da conversa quando a ' +
+        'pergunta depender dele. Mantenha nomes de servidores, comandos e códigos ' +
+        'de erro exatamente como foram escritos. Responda com exatamente duas ' +
+        'linhas, sem rótulos nem explicações: na primeira, a consulta em ' +
+        'português; na segunda, a mesma consulta em inglês.',
+      prompt: history
+        ? `Conversa:\n${history}\n\nÚltima pergunta: ${question}`
+        : `Última pergunta: ${question}`,
       maxRetries: 0,
       abortSignal: AbortSignal.timeout(4000),
     });
 
-    const rewritten = text.trim().split('\n')[0].replace(/^["'`]+|["'`]+$/g, '');
-    if (rewritten && rewritten.length <= 300) return rewritten;
+    const query = parseBilingualQuery(text);
+    if (query) return query;
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     console.warn(`Não foi possível reescrever a pergunta para a busca: ${reason}`);
@@ -232,7 +237,7 @@ export async function POST(req: Request) {
     let sources: string[] = [];
 
     if (question) {
-      // 1. Montar a consulta de busca levando em conta a conversa
+      // 1. Montar a consulta de busca (português e inglês) levando em conta a conversa
       const searchQuery = await buildSearchQuery(
         messages.slice(0, lastUserIndex),
         question
@@ -272,7 +277,8 @@ ${context ? context : 'Nenhuma anotação diretamente relacionada foi encontrada
 Instruções:
 - Use as anotações acima prioritariamente para fundamentar sua resposta caso sejam relevantes.
 - Se a pergunta envolver códigos Shell/Unix, comandos, Docker ou configurações Cloud, utilize blocos de código formatados com syntax highlighting.
-- Seja claro, objetivo e prestativo.${tavilyApiKey ? webSearchInstructions() : ''}`;
+- Seja claro, objetivo e prestativo.
+- Responda no mesmo idioma da última mensagem do usuário (português ou inglês), mesmo que as anotações estejam em outro idioma.${tavilyApiKey ? webSearchInstructions() : ''}`;
 
     // 5. Chamar o modelo Gemini com respostas em tempo real (Stream)
     // Das mensagens anteriores, o modelo recebe só o texto: os resultados de
